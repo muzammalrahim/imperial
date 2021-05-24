@@ -865,6 +865,7 @@ async function getcustomRatesUpdation(){
 async function getworkerRatesUpdation(){
   return await new Promise((resolve)=>{
     var timesheetData = [];
+    var inv_arr = [];
     Timesheet.find({exportStatus: false, statusStr:'Completed'}).populate(['JobId_Id', 'workers.workerId', 'clientId']).exec(function(err, timesheets) {
       if (err) {
         console.log('error', err);
@@ -877,7 +878,6 @@ async function getworkerRatesUpdation(){
             // console.log('element', timesheet.workers);
             var innerbar = new Promise((resolves, reject) => {
               timesheet.workers.forEach((worker, i) => {
-                inv_workers = [];
                 WorkerRates.find({clientId: worker.workerId}, function(err, workerRates) {
                   if (workerRates)
                   {
@@ -896,6 +896,7 @@ async function getworkerRatesUpdation(){
                       WR_UNITS = parseFloat(worker.hours.replace(':','.'))*tempRate;
                       WR_UNITS = WR_UNITS.toFixed(2);
                     }
+                    console.log(tempRate)
                     var obj ={
                       timesheet_id: timesheet.timesheetId,
                       WR_REF : worker.workerId.workerId,
@@ -906,7 +907,6 @@ async function getworkerRatesUpdation(){
                       response : "Successful"
                     }
                     timesheetData.push(obj);
-                    // console.log('timesheetData', timesheetData);
                     var inv_worker = {
                       workerId: worker.workerId._id,
                       payRate: tempRate,
@@ -926,35 +926,40 @@ async function getworkerRatesUpdation(){
               let inID = timesheet.timesheetId.replace(/TS/g, "INV");
               Invoice.findOne({invoiceId:inID}, function(err, invoice) {
                 invoiceWorkers.push(inv_workers);
+                // console.log('Invouice worker...', invoiceWorkers[0])
                 invoiceWorkers = invoiceWorkers[0];
-                let lastbar = new Promise(()=>{
+                let lastbar = new Promise((resolve)=>{
+                  // console.log('Invoice Before....', invoice)
                   invoice.workers.forEach((ele, i) => {
                     let invoiceWorker = invoiceWorkers[i];
-                    console.log('--invoiceWorker', invoiceWorkers[i]);
+                    // console.log('--invoiceWorker', invoiceWorkers[i]);
                     if (invoiceWorker.payRate !== null)
+                      console.log('wORK rATE FOUND')
                       ele.payRate = invoiceWorker.payRate;
                   });
-                  lastbar.then(()=>
-                    invoice.save().then(inv => {
-                      console.log("worker rates saved invoice");
-                      // res.send(inv);
-                    })
-                    .catch(err => {
-                      console.log("invoice not created", err);
-                    }));
-    
+                  resolve(invoice);
                 });
-                if (index === timesheets.length-1){
-                  resolve();
-                }
+                lastbar.then((invoice)=>{
+                  inv_arr.push(invoice)
+                  invoice.save().then(inv => {
+                    console.log("worker rates saved invoice");
+                    // res.send(inv);
+                  })
+                  .catch(err => {
+                    console.log("invoice not created", err);
+                  })
+                  if (index === timesheets.length-1){
+                    resolve(inv_arr);
+                  }
+                });
               });
             });
-            // Timesheet.updateMany({exportStatus: false, statusStr:'Completed'}, {"$set":{"exportStatus": true}}, {"multi": true}, (err, writeResult) => {
-            // });
+            Timesheet.updateMany({exportStatus: false, statusStr:'Completed'}, {"$set":{"exportStatus": true}}, {"multi": true}, (err, writeResult) => {
+            });
           });
         });
-        bar.then(() => {
-          resolve(timesheetData)
+        bar.then((inv_arr) => {
+          resolve(inv_arr)
           // console.log('timesheetData', timesheetData)
           // res.json('successfull');
         });
@@ -983,8 +988,8 @@ exports.getExportTimesheets = async (req, res) => {
     data=>{
       if(data.length > 0){
         defaultRateObjs = data;
-        getcustomRatesUpdation().then(resp=>{
-          if(resp.length > 0){
+        getcustomRatesUpdation().then(ress=>{
+          if(ress.length > 0){
             getworkerRatesUpdation().then((resp)=>{
               if(resp.length > 0){
                 const unique = [...new Set(defaultRateObjs.map(item => item.timesheet_id))];
@@ -992,13 +997,17 @@ exports.getExportTimesheets = async (req, res) => {
                 getSelectedInvoices(unique).then(response=>{
                   if(response.length > 0){
                     let workers = [];
-                    const workerArr = response.map(invoice => (invoice.workers));
+                    console.log('Worker Array!...', resp)
+                    const workerArr = resp.map(invoice => (invoice.workers));
                     workerArr.forEach(ele => {
-                    workers.push(...ele);})
-                    console.log('Workers......', workers[3])
+                    workers.push(...ele)});
+                    // console.log('Worker Array!...', workers[0])
+                    // console.log('Worker Array!...', workers[1])
                     defaultRateObjs.forEach((ele, i) => {
-                    ele.WR_RATE = workers[i].payRate;
-                    ele.WR_UNITS = workers[i].payRate*workers[i].hours;
+                    if(workers[i].payRate !==null){
+                      ele.WR_RATE = workers[i].payRate;
+                      ele.WR_UNITS = workers[i].payRate*workers[i].hours;
+                    }
                     finalRateObjs.push(ele);
                     });
                   }

@@ -180,6 +180,7 @@ export class PayrollComponent implements OnInit, AfterViewInit {
         console.log('finalRateObjs', res);
         this.exportElmToCsv(res)
         if(res[0].response === 'Successful'){
+          // console.log('finalRateObjs');
           this.getData();
         }
 
